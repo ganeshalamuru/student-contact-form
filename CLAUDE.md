@@ -21,7 +21,7 @@ Columns:
 6. College_Name
 7. Remarks
 8. Date_time
-9. Comments
+9. Comments (shows latest comment with timestamp only, past comments can be viewed from actions column)
 
 ---
 
@@ -75,8 +75,16 @@ Student Contact Form
 
 Always preserve column order.
 
-Comments is editable.
-Other columns are read-only unless explicitly requested.
+Use existing Comments cell to store full history text.
+
+When updating:
+
+1. Read existing Comments cell
+2. Append newline + new timestamped comment
+3. Write updated full value back
+
+Never clear old comments.
+
 
 ---
 
@@ -125,30 +133,140 @@ POST /api/students
 - Adds new row
 
 PATCH /api/students/:id
-or equivalent
-- Updates Comments only
+
+Now accepts:
+
+{
+  "comment": "New follow-up text"
+}
+
+Server behavior:
+
+- Validate non-empty comment
+- Read existing row comments
+- Append timestamp
+- Save merged history
+- Return updated row
 
 Use async/await.
 Return proper status codes.
 
 ---
 
+## Data Table Enhancements
+
+The student table must support sorting on all columns.
+
+Sortable columns:
+- District
+- Student_Name
+- Father_Name
+- Mobile
+- Group
+- College_Name
+- Remarks
+- Date_time
+- Comments
+
+Sorting rules:
+- Click column header toggles: ascending -> descending -> none
+- Strings sort alphabetically
+- Dates sort chronologically
+- Mobile sorts numerically when possible
+
+---
+
+## Filters
+
+Add filters for:
+
+1. District
+2. College_Name
+
+Filter UI requirements:
+- Dropdown or searchable select
+- Multi-select preferred if simple
+- Include "All" option
+- Filters work together
+- Filters combine with search and sorting
+
+---
+
+## Comments Column Rules (Important)
+
+The Comments column is a running history log, not a single editable value.
+
+Never overwrite previous comments.
+
+When a new comment is added, append it to existing Comments content with timestamp.
+
+Format each entry as:
+
+[YYYY-MM-DD HH:mm] New comment text
+
+Example:
+
+[2026-04-28 18:10] Called student, interested in CSE
+[2026-04-29 09:20] Asked to call next week
+
+Newest comment should append to bottom unless requested otherwise.
+
+---
+
 ## Frontend UI Rules
 
-Build responsive UI.
+Main table must support:
 
-Student table must support:
-
+- Sorting on all columns
+- Filter by District
+- Filter by College_Name
+- Search across text fields
 - Loading state
 - Error state
 - Empty state
-- Search/filter
-- Inline edit Comments
-- Save button per row
-- Success feedback
+- Pagination optional
 
-Use functional components only.
-No class components.
+Actions column:
+
+- View Comments
+- Add Comment
+
+Use modal for comment actions.
+
+---
+
+## Add Comment UX
+
+Do not inline edit comments directly in table.
+
+When user clicks Edit / Add Comment action:
+
+- Open modal dialog
+- Show student summary (name, mobile, district)
+- Show previous comment history in scrollable area
+- Textarea for new comment
+- Save button
+- Cancel button
+
+On save:
+
+- Append timestamped comment to history
+- Update Google Sheet
+- Close modal
+- Refresh row data
+- Show success message
+
+---
+
+## Preferred Libraries
+
+Allowed:
+- shadcn/ui
+- Headless UI
+- Radix UI
+- Native dialog
+
+Use lightweight solution.
 
 ---
 
@@ -209,5 +327,7 @@ When generating code:
 
 ## Current Priority
 
-Build dashboard first.
-Authentication can come later.
+- Stable sorting/filtering
+- Comment history modal workflow
+- Clean responsive dashboard
+- Then optional auth/export
