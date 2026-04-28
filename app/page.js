@@ -35,10 +35,12 @@ export default function DashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rowIndex, comment }),
     });
-    if (!res.ok) {
-      const json = await res.json();
-      throw new Error(json.error || 'Save failed');
-    }
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Save failed');
+    // Update just this student's Comments in state — no full refresh needed
+    setStudents((prev) =>
+      prev.map((s) => (s._rowIndex === rowIndex ? { ...s, Comments: json.comments } : s))
+    );
   }
 
   return (

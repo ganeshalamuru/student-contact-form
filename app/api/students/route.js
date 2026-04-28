@@ -52,12 +52,12 @@ export async function PATCH(request) {
   try {
     const { rowIndex, comment } = await request.json();
 
-    if (!rowIndex || typeof comment !== 'string') {
-      return NextResponse.json({ error: 'rowIndex and comment are required' }, { status: 400 });
+    if (!rowIndex || !comment?.trim()) {
+      return NextResponse.json({ error: 'rowIndex and non-empty comment are required' }, { status: 400 });
     }
 
-    await updateComment(rowIndex, comment);
-    return NextResponse.json({ success: true });
+    const updatedComments = await updateComment(rowIndex, comment.trim());
+    return NextResponse.json({ success: true, comments: updatedComments });
   } catch (err) {
     console.error('PATCH /api/students error:', err);
     return NextResponse.json({ error: 'Failed to update comment' }, { status: 500 });
