@@ -224,16 +224,100 @@ Main table must support:
 - Loading state
 - Error state
 - Empty state
-- Pagination optional
+- Pagination
 
 Actions column:
-
-- View Comments
-- Add Comment
+When user clicks the icon, open a dropdown menu
+1. View/Add Comments
 
 Use modal for comment actions.
 
 ---
+
+
+## Actions Column UI
+
+Do not use visible text buttons like:
+
+- View
+- Add Comment
+- Edit
+
+Instead use a compact overflow menu icon in each row.
+
+Preferred icon:
+- vertical three dots
+- kebab menu
+- more options icon
+
+Examples:
+- ⋮
+- MoreHoriz
+- EllipsisVertical
+
+When user clicks the icon, open a dropdown menu.
+
+Menu items:
+
+1. View/Add Comment
+
+Selecting this option keeps existing functionality.
+
+---
+
+## Pagination Rules
+
+Enable pagination for student table.
+
+Default rows per page:
+
+25 rows per page
+
+Do not load all rows visually on one page.
+
+Pagination controls must appear at bottom of table.
+
+Required controls:
+
+- Previous
+- Next
+- Page numbers: 1 2 3 4 ...
+- Current page highlighted
+- Disabled state for Previous on first page
+- Disabled state for Next on last page
+
+---
+
+## Pagination Behavior
+
+Pagination must work together with:
+
+- Sorting
+- Search
+- District filter
+- College_Name filter
+
+When filters change:
+
+- Reset to page 1
+
+When sort changes:
+
+- Preserve current page if valid
+
+---
+
+## Optional Pagination Enhancements
+
+Allowed if simple:
+
+- Jump to first / last page
+- Rows count summary:
+  Showing 26-50 of 184 rows
+- Mobile compact pagination
+
+---
+
 
 ## Add Comment UX
 
@@ -327,7 +411,8 @@ When generating code:
 
 ## Current Priority
 
-- Stable sorting/filtering
-- Comment history modal workflow
-- Clean responsive dashboard
-- Then optional auth/export
+1. Three-dot actions menu
+2. Comment modal workflow
+3. Pagination (25 rows/page)
+4. Sorting + filters stability
+5. Responsive UI
