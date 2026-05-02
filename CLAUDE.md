@@ -9,6 +9,10 @@ Primary purpose:
 - Allow admins/users to add/view comment history per student
 - Optionally append new student rows through forms
 
+IMPORTANT:
+- Data must NOT be loaded initially
+- Data is only fetched after filters are selected
+
 Database:
 igrad
 
@@ -65,8 +69,6 @@ Never hardcode credentials.
 
 ## Project Structure
 
-Use this structure:
-
 /app
   /api/students/route.js
 /components
@@ -74,8 +76,6 @@ Use this structure:
   StudentForm.jsx
 /lib
   mongodb.js
-
-Keep utilities in `/lib`.
 
 ---
 
@@ -88,176 +88,205 @@ Collection: students
 - Never overwrite comments
 - Always append new comments
 
-When updating comments:
+---
 
-Use MongoDB `$push`:
+## Pagination, Filtering, Search (CRITICAL)
+
+All data operations MUST be handled in MongoDB.
+
+Frontend MUST NOT:
+- Fetch all documents
+- Perform client-side pagination
+
+---
+
+### Query Requirements
+
+Backend must support:
+
+- Pagination → `skip` + `limit`
+- Sorting → `sort`
+- Filtering → `match`
+- Search → `$regex` or `$text`
+
+---
+
+### FILTER REQUIRED RULE
+
+API must NOT return data if filters are not applied.
+
+At least ONE of the following must be present:
+
+- district
+- collegename
+- State
+
+If no filters:
+
+Return:
 
 {
-  $push: {
-    comments: {
-      text: "...",
-      createdAt: new Date(),
-      createdBy: "admin"
-    }
-  },
-  $set: { updatedAt: new Date() }
+  data: [],
+  pagination: { total: 0 }
 }
-
----
-
-## Required Features
-
-### Read Rows
-
-Fetch from MongoDB:
-
-- Return all students
-- Normalize comments field → []
-
----
-
-### Append Rows
-
-Insert new student:
-
-- Validate required fields
-- Prevent duplicate phone if possible
-- Initialize:
-
-comments: []
-
----
-
-### Update Comments
-
-Append new comment:
-
-- Never overwrite existing comments
-- Use `$push`
-- Add timestamp
 
 ---
 
 ## API Routes
 
-Implement:
-
 GET /api/students
-- Fetch all students
-- Ensure comments array exists
 
-POST /api/students
-- Insert new student
-- Initialize empty comments array
+Query params:
 
-PATCH /api/students/:id
-
-Input:
-{
-  "comment": "New follow-up text"
-}
-
-Server behavior:
-
-- Validate non-empty comment
-- Append to comments array using $push
-- Add createdAt timestamp
-- Return updated student
-
-Use async/await.
-Return proper status codes.
+?page=1
+&limit=25
+&search=
+&district=
+&college=
+&state=
+&sort=name
+&order=asc
 
 ---
 
-## Data Table Enhancements
+### MongoDB Query Pattern (MANDATORY)
 
-The student table must support sorting on all columns.
+Use aggregation with `$facet`:
 
-Sortable columns:
-- district
+[
+  { $match: query },
+
+  {
+    $facet: {
+      data: [
+        { $sort: { [sortField]: sortOrder } },
+        { $skip: skip },
+        { $limit: limit }
+      ],
+      totalCount: [
+        { $count: "count" }
+      ]
+    }
+  }
+]
+
+---
+
+### Response Format
+
+{
+  data: [...],
+  pagination: {
+    total,
+    page,
+    limit,
+    totalPages
+  }
+}
+
+---
+
+## Search Rules
+
+Search must work across:
+
 - name
 - fathername
-- phone
-- group
 - collegename
+- district
 - State
 
-Sorting rules:
-- Click column header toggles: ascending -> descending -> none
-- Strings sort alphabetically
-- Numbers sort numerically
+Preferred:
+
+Use `$text` if index exists
+
+Fallback:
+
+Use `$regex` (case-insensitive)
 
 ---
 
 ## Filters
 
-Add filters for:
+Filters:
 
-1. district
-2. collegename
-3. State
+- district
+- collegename
+- State
 
-Filter UI requirements:
-- Dropdown or searchable select
-- Include "All" option
-- Filters combine with search and sorting
+Rules:
 
----
-
-## Comments Rules (Important)
-
-Comments are stored as an array inside each student document.
-
-Never overwrite previous comments.
-
-Each comment:
-
-{
-  text,
-  createdAt,
-  createdBy (optional)
-}
-
-Display format:
-
-[YYYY-MM-DD HH:mm] text
-
-Order:
-- Show oldest → newest (default)
-- New comments appended at end
+- Exact match filtering
+- Combine with search
+- Combine with sorting
 
 ---
 
-## Frontend UI Rules
+## Indexing Rules (NOT YET)
 
-Main table must support:
+Must create indexes:
 
-- Sorting
-- Filtering
-- Search
-- Loading state
-- Error state
-- Empty state
-- Pagination
+db.students.createIndex({ district: 1 });
+db.students.createIndex({ collegename: 1 });
+db.students.createIndex({ State: 1 });
+db.students.createIndex({ name: 1 });
 
-Actions column:
-- Uses three-dot menu
-- Opens dropdown
+Optional (recommended):
 
-Menu:
+db.students.createIndex({
+  name: "text",
+  fathername: "text",
+  collegename: "text",
+  district: "text"
+});
 
-1. View/Add Comment
 
 ---
 
-## Actions Column UI
+## Performance Rules
 
-Use overflow icon (⋮)
+- Never scan full collection
+- Always use indexes
+- Always paginate
+- Max limit: 100
+- Default limit: 25
 
-No text buttons.
+---
 
-Dropdown menu:
-- View/Add Comment
+## Data Table Enhancements
+
+Supports:
+
+- Sorting (server-side)
+- Filtering (server-side)
+- Search (server-side)
+- Pagination (server-side)
+
+---
+
+## Frontend Data Rules
+
+Frontend MUST:
+
+- Call API on:
+  - filter change
+  - search input
+  - sort change
+  - page change
+
+Frontend MUST NOT:
+
+- Fetch all students at once
+- Show data before filters
+
+---
+
+## UI Behavior (IMPORTANT)
+
+Initial state:
+
+- Show empty state
+- Message: "Select filters to view data"
 
 ---
 
@@ -266,101 +295,89 @@ Dropdown menu:
 - 25 rows per page
 - Page numbers at bottom
 - Previous / Next buttons
-- Highlight current page
 
----
-
-## Pagination Behavior
-
-Pagination must work with:
-
-- Sorting
-- Filters
-- Search
-
-Rules:
+Behavior:
 
 - Reset to page 1 on filter change
 - Preserve page on sort
 
 ---
 
+## Comments Rules
+
+Comments are stored as array.
+
+Append-only:
+
+{
+  text,
+  createdAt,
+  createdBy
+}
+
+Never overwrite.
+
+---
+
 ## Add Comment UX
 
-Do not inline edit.
-
-On action click:
-
-Open modal:
-
-- Show student info
-- Show comment history (scrollable)
-- Textarea for new comment
+- Trigger via three-dot menu
+- Open modal
+- Show history
+- Add new comment
 
 On save:
 
-- Append new comment to array
-- Close modal
+- Append comment
 - Refresh data
-- Show success message
 
 ---
 
-## Preferred Libraries
+## Actions Column UI
 
-- shadcn/ui
-- Headless UI
-- Radix UI
-
----
-
-## Coding Standards
-
-- Add comment at top of each file
-- Use clear naming
-- Avoid duplication
-- Validate inputs
-- Handle errors properly
+- Use ⋮ icon
+- Dropdown:
+  - View/Add Comment
 
 ---
 
 ## Security Rules
 
-- Never expose MongoDB URI client-side
-- DB access only in server code
-- No DB calls in React components
+- No DB access in frontend
+- MongoDB only in API routes
+- Validate all inputs
+
+---
+
+## Coding Standards
+
+- Async/await only
+- Functional components only
+- Clean structure
+- Error handling mandatory
 
 ---
 
 ## Deployment Notes
 
-- Works on Vercel / Node server
-- Set env variables in deployment
+- Works on Vercel / Node
+- Set env vars
 
 ---
 
 ## When Making Changes
 
-1. Preserve schema
-2. Do not break comments array
-3. Maintain append-only behavior
-4. Keep UI stable
-
----
-
-## Preferred Output Style
-
-- Full file code
-- Ready to paste
-- Production ready
+- Do not break query structure
+- Do not remove pagination logic
+- Do not bypass filters requirement
+- Maintain performance rules
 
 ---
 
 ## Current Priority
 
-1. MongoDB integration
-2. Comment history (array-based)
-3. Three-dot actions menu
-4. Pagination (25 rows/page)
-5. Sorting + filters
-6. Responsive UI
+1. Filter-required data loading
+2. Aggregation-based pagination
+3. Index optimization (NOT YET)
+4. Comment modal workflow
+5. UI polish

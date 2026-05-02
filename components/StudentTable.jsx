@@ -1,9 +1,7 @@
-// Client component — student data table with sorting, filters, search, pagination, and comment-history modal
+// Client component — renders server-paginated student table; all data operations are server-side
 'use client';
 
-import { useState, useMemo } from 'react';
-
-const PAGE_SIZE = 25;
+import { useState, useEffect } from 'react';
 
 const COLUMNS = [
   { key: 'State',       label: 'State' },
@@ -16,30 +14,28 @@ const COLUMNS = [
   { key: 'comments',    label: 'Comments' },
 ];
 
-// Formats a single comment object for display: [YYYY-MM-DD HH:mm] text
 function formatComment(c) {
   if (!c) return '';
   const ts = c.createdAt
     ? new Date(c.createdAt).toISOString().slice(0, 16).replace('T', ' ')
     : '';
-  return ts ? `[${ts}] ${c.text}` : c.text ?? '';
+  return ts ? `[${ts}] ${c.text}` : (c.text ?? '');
 }
 
-// Returns the formatted latest comment for the table cell preview
 function latestComment(comments) {
   if (!Array.isArray(comments) || comments.length === 0) return '';
   return formatComment(comments[comments.length - 1]);
 }
 
-function sortIcon(column, sort) {
-  if (sort.column !== column) return ' ↕';
-  return sort.direction === 'asc' ? ' ↑' : ' ↓';
+function sortIcon(col, params) {
+  if (params.sort !== col) return ' ↕';
+  return params.order === 'asc' ? ' ↑' : ' ↓';
 }
 
 function buildPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const around = new Set([1, 2, current - 1, current, current + 1, total - 1, total]);
-  const valid = [...around].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const valid  = [...around].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
   const result = [];
   for (let i = 0; i < valid.length; i++) {
     if (i > 0 && valid[i] - valid[i - 1] > 1) result.push(null);
@@ -51,12 +47,10 @@ function buildPageNumbers(current, total) {
 // ── Comment history modal ────────────────────────────────────────────────────
 function CommentModal({ student, onClose, onSave }) {
   const [newComment, setNewComment] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [saving, setSaving]         = useState(false);
+  const [error, setError]           = useState(null);
 
-  const lines = Array.isArray(student.comments)
-    ? student.comments.map(formatComment)
-    : [];
+  const lines = Array.isArray(student.comments) ? student.comments.map(formatComment) : [];
 
   async function handleSave() {
     if (!newComment.trim()) return;
@@ -130,143 +124,117 @@ function CommentModal({ student, onClose, onSave }) {
 }
 
 // ── Main table ───────────────────────────────────────────────────────────────
-export default function StudentTable({ students, onCommentSave }) {
-  const [search, setSearch]         = useState('');
-  const [stateFilter, setState]     = useState('');
-  const [districtFilter, setDistrict] = useState('');
-  const [collegeFilter, setCollege] = useState('');
-  const [sort, setSort]             = useState({ column: null, direction: 'asc' });
-  const [modal, setModal]           = useState(null);
-  const [openMenu, setOpenMenu]     = useState(null); // student._id of open kebab menu
-  const [page, setPage]             = useState(1);
+export default function StudentTable({
+  data, pagination, filterOptions, params, loading, hasFilters, onParamsChange, onCommentSave,
+}) {
+  const [modal, setModal]         = useState(null);
+  const [openMenu, setOpenMenu]   = useState(null);
+  const [localSearch, setLocalSearch] = useState(params.search);
 
-  const states = useMemo(
-    () => [...new Set(students.map((s) => s.State).filter(Boolean))].sort(),
-    [students],
-  );
-  const districts = useMemo(
-    () => [...new Set(students.map((s) => s.district).filter(Boolean))].sort(),
-    [students],
-  );
-  const colleges = useMemo(
-    () => [...new Set(students.map((s) => s.collegename).filter(Boolean))].sort(),
-    [students],
-  );
+  // Sync local search input if parent resets it
+  useEffect(() => {
+    setLocalSearch(params.search);
+  }, [params.search]);
 
-  function toggleSort(column) {
-    setSort((prev) => {
-      if (prev.column !== column) return { column, direction: 'asc' };
-      if (prev.direction === 'asc') return { column, direction: 'desc' };
-      return { column: null, direction: 'asc' };
-    });
+  // Debounce search — wait 400ms after the user stops typing before firing API call
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (localSearch !== params.search) {
+        onParamsChange({ search: localSearch });
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [localSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleSort(col) {
+    if (col === 'comments') return; // comments array not sortable server-side simply
+    if (params.sort === col) {
+      if (params.order === 'asc') {
+        onParamsChange({ order: 'desc' });
+      } else {
+        onParamsChange({ sort: '', order: 'asc' }); // reset to no explicit sort
+      }
+    } else {
+      onParamsChange({ sort: col, order: 'asc' });
+    }
   }
 
-  const processed = useMemo(() => {
-    let rows = students;
-
-    if (stateFilter)    rows = rows.filter((s) => s.State       === stateFilter);
-    if (districtFilter) rows = rows.filter((s) => s.district    === districtFilter);
-    if (collegeFilter)  rows = rows.filter((s) => s.collegename === collegeFilter);
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter((s) =>
-        [s.State, s.district, s.name, s.fathername, s.phone, s.group, s.collegename]
-          .some((v) => String(v ?? '').toLowerCase().includes(q)) ||
-        (s.comments ?? []).some((c) => c.text?.toLowerCase().includes(q)),
-      );
-    }
-
-    if (sort.column) {
-      rows = [...rows].sort((a, b) => {
-        // comments column: sort by count
-        if (sort.column === 'comments') {
-          const an = (a.comments ?? []).length;
-          const bn = (b.comments ?? []).length;
-          return sort.direction === 'asc' ? an - bn : bn - an;
-        }
-
-        const av = String(a[sort.column] ?? '');
-        const bv = String(b[sort.column] ?? '');
-
-        if (sort.column === 'phone') {
-          const an = parseInt(av.replace(/\D/g, ''), 10);
-          const bn = parseInt(bv.replace(/\D/g, ''), 10);
-          if (!isNaN(an) && !isNaN(bn))
-            return sort.direction === 'asc' ? an - bn : bn - an;
-        }
-
-        const cmp = av.localeCompare(bv);
-        return sort.direction === 'asc' ? cmp : -cmp;
-      });
-    }
-
-    return rows;
-  }, [students, search, stateFilter, districtFilter, collegeFilter, sort]);
-
-  const totalPages  = Math.max(1, Math.ceil(processed.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows    = processed.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const from        = processed.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
-  const to          = Math.min(currentPage * PAGE_SIZE, processed.length);
-
-  if (students.length === 0) {
-    return <p className="text-center text-gray-500 py-12">No student records found.</p>;
-  }
+  const { total, page: currentPage, totalPages, limit } = pagination;
+  const from = total === 0 ? 0 : (currentPage - 1) * limit + 1;
+  const to   = Math.min(currentPage * limit, total);
 
   return (
     <div>
-      {/* Transparent overlay — closes the kebab menu on outside click */}
+      {/* Transparent overlay — closes kebab menu on outside click */}
       {openMenu !== null && (
         <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
       )}
 
-      {/* Filter bar */}
+      {/* Filter + search bar — always visible */}
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <input
           type="text"
           placeholder="Search name, phone, college…"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          value={localSearch}
+          onChange={(e) => setLocalSearch(e.target.value)}
           className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         <select
-          value={stateFilter}
-          onChange={(e) => { setState(e.target.value); setPage(1); }}
+          value={params.state}
+          onChange={(e) => onParamsChange({ state: e.target.value })}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All States</option>
-          {states.map((s) => <option key={s} value={s}>{s}</option>)}
+          {filterOptions.states.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
 
         <select
-          value={districtFilter}
-          onChange={(e) => { setDistrict(e.target.value); setPage(1); }}
+          value={params.district}
+          onChange={(e) => onParamsChange({ district: e.target.value })}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All Districts</option>
-          {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+          {filterOptions.districts.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
 
         <select
-          value={collegeFilter}
-          onChange={(e) => { setCollege(e.target.value); setPage(1); }}
+          value={params.college}
+          onChange={(e) => onParamsChange({ college: e.target.value })}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">All Colleges</option>
-          {colleges.map((c) => <option key={c} value={c}>{c}</option>)}
+          {filterOptions.colleges.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-
-        <span className="text-xs text-gray-500 whitespace-nowrap">
-          {processed.length} of {students.length} records
-        </span>
       </div>
 
-      {processed.length === 0 ? (
-        <p className="text-center text-gray-400 py-8">No records match your filters.</p>
+      {/* States */}
+      {!hasFilters ? (
+        <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+          <svg className="w-12 h-12 mb-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+          </svg>
+          <p className="text-sm font-medium">Select at least one filter to view students</p>
+          <p className="text-xs mt-1">Use State, District, or College above</p>
+        </div>
+      ) : loading ? (
+        <div className="flex justify-center items-center py-24 text-gray-400">
+          <svg className="animate-spin h-7 w-7 mr-3" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          Loading…
+        </div>
+      ) : data.length === 0 ? (
+        <p className="text-center text-gray-400 py-16">No records match your filters.</p>
       ) : (
         <>
+          {/* Row count */}
+          <div className="mb-2 text-xs text-gray-500">
+            Showing {from}–{to} of {total} rows
+          </div>
+
           <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
             <table className="min-w-full text-sm">
               <thead className="bg-blue-600 text-white">
@@ -275,17 +243,19 @@ export default function StudentTable({ students, onCommentSave }) {
                   {COLUMNS.map((col) => (
                     <th
                       key={col.key}
-                      onClick={() => toggleSort(col.key)}
-                      className="px-3 py-3 text-left font-medium whitespace-nowrap cursor-pointer hover:bg-blue-500 select-none"
+                      onClick={() => handleSort(col.key)}
+                      className={`px-3 py-3 text-left font-medium whitespace-nowrap select-none ${
+                        col.key !== 'comments' ? 'cursor-pointer hover:bg-blue-500' : ''
+                      }`}
                     >
-                      {col.label}{sortIcon(col.key, sort)}
+                      {col.label}{col.key !== 'comments' && sortIcon(col.key, params)}
                     </th>
                   ))}
                   <th className="px-3 py-3 text-left font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {pageRows.map((student, idx) => (
+                {data.map((student, idx) => (
                   <tr key={student._id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-3 py-3 text-gray-400">{from + idx}</td>
                     {COLUMNS.map((col) => (
@@ -331,52 +301,46 @@ export default function StudentTable({ students, onCommentSave }) {
           </div>
 
           {/* Pagination */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-xs text-gray-500">
-              Showing {from}–{to} of {processed.length} rows
-            </span>
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-1">
+            <button
+              onClick={() => onParamsChange({ page: 1 })}
+              disabled={currentPage === 1}
+              className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >«</button>
 
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(1)}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >«</button>
+            <button
+              onClick={() => onParamsChange({ page: currentPage - 1 })}
+              disabled={currentPage === 1}
+              className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Previous</button>
 
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >Previous</button>
+            {buildPageNumbers(currentPage, totalPages).map((p, i) =>
+              p === null ? (
+                <span key={`e${i}`} className="px-1 text-sm text-gray-400 select-none">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => onParamsChange({ page: p })}
+                  className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
+                    p === currentPage
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >{p}</button>
+              )
+            )}
 
-              {buildPageNumbers(currentPage, totalPages).map((p, i) =>
-                p === null ? (
-                  <span key={`e${i}`} className="px-1 text-sm text-gray-400 select-none">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
-                      p === currentPage
-                        ? 'bg-blue-600 text-white'
-                        : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >{p}</button>
-                )
-              )}
+            <button
+              onClick={() => onParamsChange({ page: currentPage + 1 })}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Next</button>
 
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >Next</button>
-
-              <button
-                onClick={() => setPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >»</button>
-            </div>
+            <button
+              onClick={() => onParamsChange({ page: totalPages })}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >»</button>
           </div>
         </>
       )}

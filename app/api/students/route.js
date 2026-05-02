@@ -1,11 +1,33 @@
 // API route: GET /api/students, POST /api/students, PATCH /api/students
 import { NextResponse } from 'next/server';
-import { getStudents, insertStudent, appendComment } from '@/lib/mongodb';
+import { queryStudents, insertStudent, appendComment } from '@/lib/mongodb';
 
-export async function GET() {
+const EMPTY_RESPONSE = {
+  data: [],
+  pagination: { total: 0, page: 1, limit: 25, totalPages: 0 },
+};
+
+export async function GET(request) {
   try {
-    const students = await getStudents();
-    return NextResponse.json(students);
+    const { searchParams } = new URL(request.url);
+
+    const district = searchParams.get('district') ?? '';
+    const college  = searchParams.get('college')  ?? '';
+    const state    = searchParams.get('state')    ?? '';
+
+    // Enforce filter-required rule — never scan the full collection
+    if (!district && !college && !state) {
+      return NextResponse.json(EMPTY_RESPONSE);
+    }
+
+    const page   = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10));
+    const limit  = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '25', 10)));
+    const search = searchParams.get('search') ?? '';
+    const sort   = searchParams.get('sort')   ?? '';
+    const order  = searchParams.get('order')  === 'desc' ? 'desc' : 'asc';
+
+    const result = await queryStudents({ page, limit, search, district, college, state, sort, order });
+    return NextResponse.json(result);
   } catch (err) {
     console.error('GET /api/students error:', err);
     return NextResponse.json({ error: 'Failed to fetch students' }, { status: 500 });
