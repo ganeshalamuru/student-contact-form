@@ -222,7 +222,7 @@ Rules:
 
 ---
 
-## Indexing Rules (NOT YET)
+## Indexing Rules (NEXT STEP)
 
 Must create indexes:
 
@@ -378,6 +378,6 @@ On save:
 
 1. Filter-required data loading
 2. Aggregation-based pagination
-3. Index optimization (NOT YET)
+3. Index optimization (NEXT STEP)
 4. Comment modal workflow
 5. UI polish
