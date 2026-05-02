@@ -2,26 +2,42 @@
 
 ## Project Overview
 
-This is a web application that uses Google Sheets as a serverless database.
+This is a web application that uses MongoDB as the database.
 
 Primary purpose:
-- Display student contact records from Google Sheets
-- Allow admins/users to update the Comments column
+- Display student contact records from MongoDB
+- Allow admins/users to add/view comment history per student
 - Optionally append new student rows through forms
 
-Google Sheet tab name:
-Student Contact Form
+Database:
+igrad
 
-Columns:
-1. District
-2. Student_Name
-3. Father_Name
-4. Mobile
-5. Group
-6. College_Name
-7. Remarks
-8. Date_time
-9. Comments (shows latest comment with timestamp only, past comments can be viewed from actions column)
+Collection:
+students
+
+Schema:
+
+{
+  _id: ObjectId,
+  State: "",
+  district: "",
+  name: "",
+  fathername: "",
+  phone: NumberLong or string,
+  group: "",
+  collegename: "",
+  comments: [
+    {
+      text: string,
+      createdAt: Date,
+      createdBy: string (optional)
+    }
+  ],
+  createdAt: Date,
+  updatedAt: Date
+}
+
+If `comments` field does not exist, treat it as an empty array.
 
 ---
 
@@ -30,7 +46,7 @@ Columns:
 - Next.js 14 (App Router preferred unless existing Pages Router)
 - React functional components only
 - Node.js runtime for API routes
-- googleapis package for Sheets integration
+- MongoDB (native driver or mongoose)
 - Environment variables for secrets
 
 ---
@@ -39,13 +55,9 @@ Columns:
 
 Required in `.env.local`:
 
-GOOGLE_CLIENT_EMAIL=
-GOOGLE_PRIVATE_KEY=
-GOOGLE_SHEET_ID=
-
-Private key must be normalized:
-
-process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+MONGODB_URI=
+MONGODB_DB=igrad
+MONGODB_COLLECTION=students
 
 Never hardcode credentials.
 
@@ -61,30 +73,35 @@ Use this structure:
   StudentTable.jsx
   StudentForm.jsx
 /lib
-  sheets.js
+  mongodb.js
 
 Keep utilities in `/lib`.
 
 ---
 
-## Google Sheets Rules
+## MongoDB Rules
 
-Use only the tab:
+Collection: students
 
-Student Contact Form
+- Always return `comments` as an array
+- If missing, default to []
+- Never overwrite comments
+- Always append new comments
 
-Always preserve column order.
+When updating comments:
 
-Use existing Comments cell to store full history text.
+Use MongoDB `$push`:
 
-When updating:
-
-1. Read existing Comments cell
-2. Append newline + new timestamped comment
-3. Write updated full value back
-
-Never clear old comments.
-
+{
+  $push: {
+    comments: {
+      text: "...",
+      createdAt: new Date(),
+      createdBy: "admin"
+    }
+  },
+  $set: { updatedAt: new Date() }
+}
 
 ---
 
@@ -92,33 +109,32 @@ Never clear old comments.
 
 ### Read Rows
 
-Create helper:
+Fetch from MongoDB:
 
-getRows()
+- Return all students
+- Normalize comments field → []
 
-Should:
-- Read all rows
-- Return JSON objects with consistent keys
-- Skip empty rows if needed
+---
 
 ### Append Rows
 
-Create helper:
+Insert new student:
 
-appendRow(data)
+- Validate required fields
+- Prevent duplicate phone if possible
+- Initialize:
 
-Validate:
-- Required fields present
-- Mobile format reasonable
-- Duplicate mobile prevention if possible
+comments: []
+
+---
 
 ### Update Comments
 
-Create helper:
+Append new comment:
 
-updateComment(rowIndex, comment)
-
-Only modify Comments column.
+- Never overwrite existing comments
+- Use `$push`
+- Add timestamp
 
 ---
 
@@ -127,15 +143,16 @@ Only modify Comments column.
 Implement:
 
 GET /api/students
-- Returns all rows
+- Fetch all students
+- Ensure comments array exists
 
 POST /api/students
-- Adds new row
+- Insert new student
+- Initialize empty comments array
 
 PATCH /api/students/:id
 
-Now accepts:
-
+Input:
 {
   "comment": "New follow-up text"
 }
@@ -143,10 +160,9 @@ Now accepts:
 Server behavior:
 
 - Validate non-empty comment
-- Read existing row comments
-- Append timestamp
-- Save merged history
-- Return updated row
+- Append to comments array using $push
+- Add createdAt timestamp
+- Return updated student
 
 Use async/await.
 Return proper status codes.
@@ -158,21 +174,18 @@ Return proper status codes.
 The student table must support sorting on all columns.
 
 Sortable columns:
-- District
-- Student_Name
-- Father_Name
-- Mobile
-- Group
-- College_Name
-- Remarks
-- Date_time
-- Comments
+- district
+- name
+- fathername
+- phone
+- group
+- collegename
+- State
 
 Sorting rules:
 - Click column header toggles: ascending -> descending -> none
 - Strings sort alphabetically
-- Dates sort chronologically
-- Mobile sorts numerically when possible
+- Numbers sort numerically
 
 ---
 
@@ -180,36 +193,38 @@ Sorting rules:
 
 Add filters for:
 
-1. District
-2. College_Name
+1. district
+2. collegename
+3. State
 
 Filter UI requirements:
 - Dropdown or searchable select
-- Multi-select preferred if simple
 - Include "All" option
-- Filters work together
 - Filters combine with search and sorting
 
 ---
 
-## Comments Column Rules (Important)
+## Comments Rules (Important)
 
-The Comments column is a running history log, not a single editable value.
+Comments are stored as an array inside each student document.
 
 Never overwrite previous comments.
 
-When a new comment is added, append it to existing Comments content with timestamp.
+Each comment:
 
-Format each entry as:
+{
+  text,
+  createdAt,
+  createdBy (optional)
+}
 
-[YYYY-MM-DD HH:mm] New comment text
+Display format:
 
-Example:
+[YYYY-MM-DD HH:mm] text
 
-[2026-04-28 18:10] Called student, interested in CSE
-[2026-04-29 09:20] Asked to call next week
-
-Newest comment should append to bottom unless requested otherwise.
+Order:
+- Show oldest → newest (default)
+- New comments appended at end
 
 ---
 
@@ -217,202 +232,135 @@ Newest comment should append to bottom unless requested otherwise.
 
 Main table must support:
 
-- Sorting on all columns
-- Filter by District
-- Filter by College_Name
-- Search across text fields
+- Sorting
+- Filtering
+- Search
 - Loading state
 - Error state
 - Empty state
 - Pagination
 
 Actions column:
-When user clicks the icon, open a dropdown menu
-1. View/Add Comments
+- Uses three-dot menu
+- Opens dropdown
 
-Use modal for comment actions.
-
----
-
-
-## Actions Column UI
-
-Do not use visible text buttons like:
-
-- View
-- Add Comment
-- Edit
-
-Instead use a compact overflow menu icon in each row.
-
-Preferred icon:
-- vertical three dots
-- kebab menu
-- more options icon
-
-Examples:
-- ⋮
-- MoreHoriz
-- EllipsisVertical
-
-When user clicks the icon, open a dropdown menu.
-
-Menu items:
+Menu:
 
 1. View/Add Comment
 
-Selecting this option keeps existing functionality.
+---
+
+## Actions Column UI
+
+Use overflow icon (⋮)
+
+No text buttons.
+
+Dropdown menu:
+- View/Add Comment
 
 ---
 
 ## Pagination Rules
 
-Enable pagination for student table.
-
-Default rows per page:
-
-25 rows per page
-
-Do not load all rows visually on one page.
-
-Pagination controls must appear at bottom of table.
-
-Required controls:
-
-- Previous
-- Next
-- Page numbers: 1 2 3 4 ...
-- Current page highlighted
-- Disabled state for Previous on first page
-- Disabled state for Next on last page
+- 25 rows per page
+- Page numbers at bottom
+- Previous / Next buttons
+- Highlight current page
 
 ---
 
 ## Pagination Behavior
 
-Pagination must work together with:
+Pagination must work with:
 
 - Sorting
+- Filters
 - Search
-- District filter
-- College_Name filter
 
-When filters change:
+Rules:
 
-- Reset to page 1
-
-When sort changes:
-
-- Preserve current page if valid
+- Reset to page 1 on filter change
+- Preserve page on sort
 
 ---
-
-## Optional Pagination Enhancements
-
-Allowed if simple:
-
-- Jump to first / last page
-- Rows count summary:
-  Showing 26-50 of 184 rows
-- Mobile compact pagination
-
----
-
 
 ## Add Comment UX
 
-Do not inline edit comments directly in table.
+Do not inline edit.
 
-When user clicks Edit / Add Comment action:
+On action click:
 
-- Open modal dialog
-- Show student summary (name, mobile, district)
-- Show previous comment history in scrollable area
+Open modal:
+
+- Show student info
+- Show comment history (scrollable)
 - Textarea for new comment
-- Save button
-- Cancel button
 
 On save:
 
-- Append timestamped comment to history
-- Update Google Sheet
+- Append new comment to array
 - Close modal
-- Refresh row data
+- Refresh data
 - Show success message
 
 ---
 
 ## Preferred Libraries
 
-Allowed:
 - shadcn/ui
 - Headless UI
 - Radix UI
-- Native dialog
-
-Use lightweight solution.
 
 ---
 
 ## Coding Standards
 
-- Add comment at top of each file explaining purpose
-- Use clear variable names
+- Add comment at top of each file
+- Use clear naming
 - Avoid duplication
-- Keep functions small
-- Handle errors gracefully
-- Validate inputs server-side
+- Validate inputs
+- Handle errors properly
 
 ---
 
 ## Security Rules
 
-Never expose private key client-side.
-
-Google Sheets access must happen only in server code:
-- API routes
-- server actions
-- backend utilities
-
-Do not import googleapis into client components.
+- Never expose MongoDB URI client-side
+- DB access only in server code
+- No DB calls in React components
 
 ---
 
 ## Deployment Notes
 
-Works on Vercel or any Node host.
-
-Ensure env vars are configured in deployment dashboard.
+- Works on Vercel / Node server
+- Set env variables in deployment
 
 ---
 
 ## When Making Changes
 
-Before changing code:
-
-1. Understand current structure
-2. Preserve working env config
-3. Avoid breaking Sheets schema
-4. Keep Comments editing functional
-
-When uncertain, prefer minimal safe changes.
+1. Preserve schema
+2. Do not break comments array
+3. Maintain append-only behavior
+4. Keep UI stable
 
 ---
 
 ## Preferred Output Style
 
-When generating code:
-
-- Full file contents
+- Full file code
 - Ready to paste
-- Production quality
-- No placeholders unless requested
+- Production ready
 
+---
 
 ## Current Priority
 
-1. Three-dot actions menu
-2. Comment modal workflow
-3. Pagination (25 rows/page)
-4. Sorting + filters stability
-5. Responsive UI
+1. MongoDB integration
+2. Comment history (array-based)
+3. Three-dot actions menu
+4. Pagination (25 rows/page)
+5. Sorting + filters
+6. Responsive UI

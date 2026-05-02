@@ -1,4 +1,4 @@
-// Main dashboard page — fetches students and renders table + add-student form
+// Main dashboard page — fetches students from MongoDB and renders table + add-student form
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -29,17 +29,17 @@ export default function DashboardPage() {
     fetchStudents();
   }, [fetchStudents]);
 
-  async function handleCommentSave(rowIndex, comment) {
+  async function handleCommentSave(id, comment) {
     const res = await fetch('/api/students', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rowIndex, comment }),
+      body: JSON.stringify({ id, comment }),
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Save failed');
-    // Update just this student's Comments in state — no full refresh needed
+    // Update just this student's comments array in state — no full refresh needed
     setStudents((prev) =>
-      prev.map((s) => (s._rowIndex === rowIndex ? { ...s, Comments: json.comments } : s))
+      prev.map((s) => (s._id === id ? { ...s, comments: json.comments } : s))
     );
   }
 
@@ -49,7 +49,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Student Contact Dashboard</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {loading ? 'Loading…' : `${students.length} record${students.length !== 1 ? 's' : ''} from Google Sheets`}
+            {loading ? 'Loading…' : `${students.length} record${students.length !== 1 ? 's' : ''} from MongoDB`}
           </p>
         </div>
         <div className="flex gap-3 items-center">

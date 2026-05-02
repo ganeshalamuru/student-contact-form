@@ -6,21 +6,29 @@ import { useState, useMemo } from 'react';
 const PAGE_SIZE = 25;
 
 const COLUMNS = [
-  { key: 'District',      label: 'District' },
-  { key: 'Student_Name', label: 'Student Name' },
-  { key: 'Father_Name',  label: 'Father Name' },
-  { key: 'Mobile',       label: 'Mobile' },
-  { key: 'Group',        label: 'Group' },
-  { key: 'College_Name', label: 'College' },
-  { key: 'Remarks',      label: 'Remarks' },
-  { key: 'Date_time',    label: 'Date/Time' },
-  { key: 'Comments',     label: 'Comments' },
+  { key: 'State',       label: 'State' },
+  { key: 'district',    label: 'District' },
+  { key: 'name',        label: 'Name' },
+  { key: 'fathername',  label: 'Father Name' },
+  { key: 'phone',       label: 'Phone' },
+  { key: 'group',       label: 'Group' },
+  { key: 'collegename', label: 'College' },
+  { key: 'comments',    label: 'Comments' },
 ];
 
+// Formats a single comment object for display: [YYYY-MM-DD HH:mm] text
+function formatComment(c) {
+  if (!c) return '';
+  const ts = c.createdAt
+    ? new Date(c.createdAt).toISOString().slice(0, 16).replace('T', ' ')
+    : '';
+  return ts ? `[${ts}] ${c.text}` : c.text ?? '';
+}
+
+// Returns the formatted latest comment for the table cell preview
 function latestComment(comments) {
-  if (!comments?.trim()) return '';
-  const lines = comments.split('\n').filter((l) => l.trim());
-  return lines[lines.length - 1] ?? '';
+  if (!Array.isArray(comments) || comments.length === 0) return '';
+  return formatComment(comments[comments.length - 1]);
 }
 
 function sortIcon(column, sort) {
@@ -28,7 +36,6 @@ function sortIcon(column, sort) {
   return sort.direction === 'asc' ? ' ↑' : ' ↓';
 }
 
-// Returns page numbers with null as an ellipsis marker
 function buildPageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const around = new Set([1, 2, current - 1, current, current + 1, total - 1, total]);
@@ -47,8 +54,8 @@ function CommentModal({ student, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const lines = student.Comments
-    ? student.Comments.split('\n').filter((l) => l.trim())
+  const lines = Array.isArray(student.comments)
+    ? student.comments.map(formatComment)
     : [];
 
   async function handleSave() {
@@ -56,7 +63,7 @@ function CommentModal({ student, onClose, onSave }) {
     setSaving(true);
     setError(null);
     try {
-      await onSave(student._rowIndex, newComment.trim());
+      await onSave(student._id, newComment.trim());
       onClose();
     } catch (err) {
       setError(err.message);
@@ -74,9 +81,9 @@ function CommentModal({ student, onClose, onSave }) {
         <div className="p-5 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-800">Comment History</h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {student.Student_Name}
-            {student.Mobile   ? ` · ${student.Mobile}`   : ''}
-            {student.District ? ` · ${student.District}` : ''}
+            {student.name}
+            {student.phone    ? ` · ${student.phone}`    : ''}
+            {student.district ? ` · ${student.district}` : ''}
           </p>
         </div>
 
@@ -124,20 +131,25 @@ function CommentModal({ student, onClose, onSave }) {
 
 // ── Main table ───────────────────────────────────────────────────────────────
 export default function StudentTable({ students, onCommentSave }) {
-  const [search, setSearch]           = useState('');
+  const [search, setSearch]         = useState('');
+  const [stateFilter, setState]     = useState('');
   const [districtFilter, setDistrict] = useState('');
-  const [collegeFilter, setCollege]   = useState('');
-  const [sort, setSort]               = useState({ column: null, direction: 'asc' });
-  const [modal, setModal]             = useState(null);
-  const [openMenu, setOpenMenu]       = useState(null); // _rowIndex of open kebab menu, or null
-  const [page, setPage]               = useState(1);
+  const [collegeFilter, setCollege] = useState('');
+  const [sort, setSort]             = useState({ column: null, direction: 'asc' });
+  const [modal, setModal]           = useState(null);
+  const [openMenu, setOpenMenu]     = useState(null); // student._id of open kebab menu
+  const [page, setPage]             = useState(1);
 
+  const states = useMemo(
+    () => [...new Set(students.map((s) => s.State).filter(Boolean))].sort(),
+    [students],
+  );
   const districts = useMemo(
-    () => [...new Set(students.map((s) => s.District).filter(Boolean))].sort(),
+    () => [...new Set(students.map((s) => s.district).filter(Boolean))].sort(),
     [students],
   );
   const colleges = useMemo(
-    () => [...new Set(students.map((s) => s.College_Name).filter(Boolean))].sort(),
+    () => [...new Set(students.map((s) => s.collegename).filter(Boolean))].sort(),
     [students],
   );
 
@@ -147,38 +159,41 @@ export default function StudentTable({ students, onCommentSave }) {
       if (prev.direction === 'asc') return { column, direction: 'desc' };
       return { column: null, direction: 'asc' };
     });
-    // Sort preserves current page (clamped to totalPages below)
   }
 
   const processed = useMemo(() => {
     let rows = students;
 
-    if (districtFilter) rows = rows.filter((s) => s.District     === districtFilter);
-    if (collegeFilter)  rows = rows.filter((s) => s.College_Name === collegeFilter);
+    if (stateFilter)    rows = rows.filter((s) => s.State       === stateFilter);
+    if (districtFilter) rows = rows.filter((s) => s.district    === districtFilter);
+    if (collegeFilter)  rows = rows.filter((s) => s.collegename === collegeFilter);
 
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter((s) =>
-        Object.values(s).some((v) => String(v).toLowerCase().includes(q)),
+        [s.State, s.district, s.name, s.fathername, s.phone, s.group, s.collegename]
+          .some((v) => String(v ?? '').toLowerCase().includes(q)) ||
+        (s.comments ?? []).some((c) => c.text?.toLowerCase().includes(q)),
       );
     }
 
     if (sort.column) {
       rows = [...rows].sort((a, b) => {
-        const av = a[sort.column] ?? '';
-        const bv = b[sort.column] ?? '';
+        // comments column: sort by count
+        if (sort.column === 'comments') {
+          const an = (a.comments ?? []).length;
+          const bn = (b.comments ?? []).length;
+          return sort.direction === 'asc' ? an - bn : bn - an;
+        }
 
-        if (sort.column === 'Mobile') {
+        const av = String(a[sort.column] ?? '');
+        const bv = String(b[sort.column] ?? '');
+
+        if (sort.column === 'phone') {
           const an = parseInt(av.replace(/\D/g, ''), 10);
           const bn = parseInt(bv.replace(/\D/g, ''), 10);
           if (!isNaN(an) && !isNaN(bn))
             return sort.direction === 'asc' ? an - bn : bn - an;
-        }
-
-        if (sort.column === 'Date_time') {
-          const ad = new Date(av), bd = new Date(bv);
-          if (!isNaN(ad) && !isNaN(bd))
-            return sort.direction === 'asc' ? ad - bd : bd - ad;
         }
 
         const cmp = av.localeCompare(bv);
@@ -187,7 +202,7 @@ export default function StudentTable({ students, onCommentSave }) {
     }
 
     return rows;
-  }, [students, search, districtFilter, collegeFilter, sort]);
+  }, [students, search, stateFilter, districtFilter, collegeFilter, sort]);
 
   const totalPages  = Math.max(1, Math.ceil(processed.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -201,7 +216,7 @@ export default function StudentTable({ students, onCommentSave }) {
 
   return (
     <div>
-      {/* Transparent overlay — closes the kebab menu when clicking outside it */}
+      {/* Transparent overlay — closes the kebab menu on outside click */}
       {openMenu !== null && (
         <div className="fixed inset-0 z-10" onClick={() => setOpenMenu(null)} />
       )}
@@ -210,11 +225,20 @@ export default function StudentTable({ students, onCommentSave }) {
       <div className="mb-4 flex flex-wrap gap-3 items-center">
         <input
           type="text"
-          placeholder="Search across all fields…"
+          placeholder="Search name, phone, college…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+
+        <select
+          value={stateFilter}
+          onChange={(e) => { setState(e.target.value); setPage(1); }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All States</option>
+          {states.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
 
         <select
           value={districtFilter}
@@ -262,26 +286,26 @@ export default function StudentTable({ students, onCommentSave }) {
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {pageRows.map((student, idx) => (
-                  <tr key={student._rowIndex} className="hover:bg-gray-50 transition-colors">
+                  <tr key={student._id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-3 py-3 text-gray-400">{from + idx}</td>
                     {COLUMNS.map((col) => (
                       <td
                         key={col.key}
-                        title={col.key === 'Comments' ? student.Comments : undefined}
+                        title={col.key === 'comments' ? latestComment(student.comments) : undefined}
                         className="px-3 py-3 text-gray-700 whitespace-nowrap max-w-[200px] truncate"
                       >
-                        {col.key === 'Comments'
-                          ? latestComment(student.Comments) || <span className="text-gray-300">—</span>
-                          : student[col.key]               || <span className="text-gray-300">—</span>}
+                        {col.key === 'comments'
+                          ? latestComment(student.comments) || <span className="text-gray-300">—</span>
+                          : student[col.key]                || <span className="text-gray-300">—</span>}
                       </td>
                     ))}
 
-                    {/* Kebab / three-dot menu */}
+                    {/* Three-dot kebab menu */}
                     <td className="px-3 py-3 relative">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setOpenMenu(openMenu === student._rowIndex ? null : student._rowIndex);
+                          setOpenMenu(openMenu === student._id ? null : student._id);
                         }}
                         aria-label="Row actions"
                         className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 text-xl leading-none"
@@ -289,7 +313,7 @@ export default function StudentTable({ students, onCommentSave }) {
                         ⋮
                       </button>
 
-                      {openMenu === student._rowIndex && (
+                      {openMenu === student._id && (
                         <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]">
                           <button
                             onClick={() => { setModal(student); setOpenMenu(null); }}
@@ -313,25 +337,18 @@ export default function StudentTable({ students, onCommentSave }) {
             </span>
 
             <div className="flex items-center gap-1">
-              {/* First page */}
               <button
                 onClick={() => setPage(1)}
                 disabled={currentPage === 1}
                 className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                «
-              </button>
+              >«</button>
 
-              {/* Previous */}
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Previous
-              </button>
+              >Previous</button>
 
-              {/* Numbered pages */}
               {buildPageNumbers(currentPage, totalPages).map((p, i) =>
                 p === null ? (
                   <span key={`e${i}`} className="px-1 text-sm text-gray-400 select-none">…</span>
@@ -344,29 +361,21 @@ export default function StudentTable({ students, onCommentSave }) {
                         ? 'bg-blue-600 text-white'
                         : 'border border-gray-300 text-gray-600 hover:bg-gray-100'
                     }`}
-                  >
-                    {p}
-                  </button>
+                  >{p}</button>
                 )
               )}
 
-              {/* Next */}
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Next
-              </button>
+              >Next</button>
 
-              {/* Last page */}
               <button
                 onClick={() => setPage(totalPages)}
                 disabled={currentPage === totalPages}
                 className="px-2 py-1 text-xs rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                »
-              </button>
+              >»</button>
             </div>
           </div>
         </>

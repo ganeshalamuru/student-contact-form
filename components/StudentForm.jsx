@@ -1,18 +1,16 @@
-// Client component — form to append a new student row to the sheet
+// Client component — form to insert a new student document into MongoDB
 'use client';
 
 import { useState } from 'react';
 
 const FIELDS = [
-  { key: 'District', label: 'District' },
-  { key: 'Student_Name', label: 'Student Name', required: true },
-  { key: 'Father_Name', label: 'Father Name' },
-  { key: 'Mobile', label: 'Mobile', required: true },
-  { key: 'Group', label: 'Group' },
-  { key: 'College_Name', label: 'College Name' },
-  { key: 'Remarks', label: 'Remarks' },
-  { key: 'Date_time', label: 'Date / Time' },
-  { key: 'Comments', label: 'Comments' },
+  { key: 'name',        label: 'Name',         required: true },
+  { key: 'phone',       label: 'Phone',        required: true },
+  { key: 'fathername',  label: 'Father Name' },
+  { key: 'district',    label: 'District' },
+  { key: 'State',       label: 'State' },
+  { key: 'group',       label: 'Group' },
+  { key: 'collegename', label: 'College Name' },
 ];
 
 const EMPTY = Object.fromEntries(FIELDS.map((f) => [f.key, '']));
@@ -68,9 +66,7 @@ export default function StudentForm({ onSuccess }) {
               <input
                 type="text"
                 value={form[field.key]}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, [field.key]: e.target.value }))
-                }
+                onChange={(e) => setForm((prev) => ({ ...prev, [field.key]: e.target.value }))}
                 required={field.required}
                 className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
               />
