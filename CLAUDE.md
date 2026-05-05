@@ -374,10 +374,130 @@ On save:
 
 ---
 
+## Status Field (NEW Column)
+
+Each student has a `status` field.
+
+Allowed values:
+
+- New (default)
+- Follow Up (auto-managed)
+- Interested
+- Closed
+
+---
+
+### Default Behavior
+
+- On creation → status = "New"
+- If missing → treat as "New"
+
+---
+
+### Automatic Status Transition
+
+When a comment is added:
+
+- If current status = "New"
+  → change to "Follow Up"
+
+- If status is:
+  - Interested
+  - Closed
+
+  → DO NOT change
+
+---
+
+### Manual Status Changes
+
+User can manually set:
+
+- Interested
+- Closed
+
+if the status is already one of above, manually changing is disabled
+
+---
+
+### Backend Enforcement Rules
+
+- Status transition must happen in backend logic
+- Do NOT rely on frontend for status updates
+- Comment update must also handle status transition
+
+---
+
+### API Rules
+
+PATCH /api/students/:id/status
+
+Input:
+
+{
+  "status": "Interested"
+}
+
+Validation:
+
+Allowed values:
+- New
+- Follow Up
+- Interested
+- Closed
+
+Reject invalid values
+
+---
+
+### Staus Field UI Rules
+
+- Show status column
+- Use badge colors:
+
+  New → gray  
+  Follow Up → yellow  
+  Interested → green  
+  Closed → red
+  
+Status must NOT be editable via inline dropdown in table.
+
+Status changes must be done via Actions menu (three-dot icon).
+
+Each row must have:
+
+Actions Menu (⋮):
+
+- View/Add Comment
+- Set Status → submenu
+
+Submenu options:
+
+- Interested
+- Closed
+
+Selecting a status:
+
+- Calls backend API
+- Updates status
+- Refreshes row data
+- Trigger backend API on change
+
+---
+
+### Query Rules
+
+Status must support:
+
+- Filtering
+
 ## Current Priority
 
-1. Filter-required data loading
-2. Aggregation-based pagination
-3. Index optimization (NEXT STEP)
-4. Comment modal workflow
-5. UI polish
+1. Filter-required data loading (no initial fetch)
+2. Server-side query system (pagination + search + filter + sort using MongoDB aggregation)
+3. Index optimization for query performance (NEXT STEP)
+4. Status system with automatic transitions (New → Follow Up on comment)
+5. Comment history workflow (append-only, modal-based)
+6. UI consistency (three-dot actions, status badges, pagination UX)
+7. Error handling and input validation (API-level)
+8. Performance stability under larger datasets

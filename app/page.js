@@ -6,7 +6,7 @@ import StudentTable from '@/components/StudentTable';
 import StudentForm from '@/components/StudentForm';
 
 const DEFAULT_PARAMS = {
-  page: 1, limit: 25, search: '', district: '', college: '', state: '', sort: '', order: 'asc',
+  page: 1, limit: 25, search: '', district: '', college: '', state: '', status: '', sort: '', order: 'asc',
 };
 
 const EMPTY_RESULT = {
@@ -46,6 +46,7 @@ export default function DashboardPage() {
         district: p.district,
         college:  p.college,
         state:    p.state,
+        status:   p.status,
         sort:     p.sort,
         order:    p.order,
       }).toString();
@@ -70,7 +71,8 @@ export default function DashboardPage() {
       // Auto-reset to page 1 when filter or search changes (not on sort or explicit page change)
       const isFilterOrSearch =
         'district' in changes || 'college' in changes ||
-        'state' in changes    || 'search'  in changes;
+        'state'    in changes || 'search'  in changes ||
+        'status'   in changes;
       if (isFilterOrSearch && !('page' in changes)) next.page = 1;
       return next;
     });
@@ -84,10 +86,24 @@ export default function DashboardPage() {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || 'Save failed');
-    // Patch just this student's comments in state — no re-fetch needed
+    // Patch comments + auto-transitioned status in state — no re-fetch needed
     setResult((prev) => ({
       ...prev,
-      data: prev.data.map((s) => (s._id === id ? { ...s, comments: json.comments } : s)),
+      data: prev.data.map((s) => (s._id === id ? { ...s, comments: json.comments, status: json.status } : s)),
+    }));
+  }
+
+  async function handleStatusChange(id, status) {
+    const res = await fetch(`/api/students/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Failed to update status');
+    setResult((prev) => ({
+      ...prev,
+      data: prev.data.map((s) => (s._id === id ? { ...s, status: json.status } : s)),
     }));
   }
 
@@ -138,6 +154,7 @@ export default function DashboardPage() {
         hasFilters={hasFilters}
         onParamsChange={handleParamsChange}
         onCommentSave={handleCommentSave}
+        onStatusChange={handleStatusChange}
       />
     </main>
   );

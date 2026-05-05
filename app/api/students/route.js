@@ -1,6 +1,6 @@
 // API route: GET /api/students, POST /api/students, PATCH /api/students
 import { NextResponse } from 'next/server';
-import { queryStudents, insertStudent, appendComment } from '@/lib/mongodb';
+import { queryStudents, insertStudent, appendComment, updateStudentStatus } from '@/lib/mongodb';
 
 const EMPTY_RESPONSE = {
   data: [],
@@ -23,10 +23,11 @@ export async function GET(request) {
     const page   = Math.max(1, parseInt(searchParams.get('page')  ?? '1',  10));
     const limit  = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '25', 10)));
     const search = searchParams.get('search') ?? '';
+    const status = searchParams.get('status') ?? '';
     const sort   = searchParams.get('sort')   ?? '';
     const order  = searchParams.get('order')  === 'desc' ? 'desc' : 'asc';
 
-    const result = await queryStudents({ page, limit, search, district, college, state, sort, order });
+    const result = await queryStudents({ page, limit, search, district, college, state, status, sort, order });
     return NextResponse.json(result);
   } catch (err) {
     console.error('GET /api/students error:', err);
@@ -66,8 +67,8 @@ export async function PATCH(request) {
       return NextResponse.json({ error: 'id and non-empty comment are required' }, { status: 400 });
     }
 
-    const comments = await appendComment(id, comment.trim());
-    return NextResponse.json({ success: true, comments });
+    const { comments, status } = await appendComment(id, comment.trim());
+    return NextResponse.json({ success: true, comments, status });
   } catch (err) {
     console.error('PATCH /api/students error:', err);
     return NextResponse.json({ error: 'Failed to update comment' }, { status: 500 });

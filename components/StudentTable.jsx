@@ -11,8 +11,26 @@ const COLUMNS = [
   { key: 'phone',       label: 'Phone' },
   { key: 'group',       label: 'Group' },
   { key: 'collegename', label: 'College' },
+  { key: 'status',      label: 'Status' },
   { key: 'comments',    label: 'Comments' },
 ];
+
+const STATUS_COLORS = {
+  'New':        'bg-gray-100 text-gray-700',
+  'Follow Up':  'bg-yellow-100 text-yellow-800',
+  'Interested': 'bg-green-100 text-green-800',
+  'Closed':     'bg-red-100 text-red-800',
+};
+
+function StatusBadge({ status }) {
+  const s     = status ?? 'New';
+  const color = STATUS_COLORS[s] ?? STATUS_COLORS['New'];
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>
+      {s}
+    </span>
+  );
+}
 
 function formatComment(c) {
   if (!c) return '';
@@ -125,10 +143,11 @@ function CommentModal({ student, onClose, onSave }) {
 
 // ── Main table ───────────────────────────────────────────────────────────────
 export default function StudentTable({
-  data, pagination, filterOptions, params, loading, hasFilters, onParamsChange, onCommentSave,
+  data, pagination, filterOptions, params, loading, hasFilters, onParamsChange, onCommentSave, onStatusChange,
 }) {
-  const [modal, setModal]         = useState(null);
-  const [openMenu, setOpenMenu]   = useState(null);
+  const [modal, setModal]             = useState(null);
+  const [openMenu, setOpenMenu]       = useState(null);
+  const [statusSaving, setStatusSaving] = useState(null); // student._id while in-flight
   const [localSearch, setLocalSearch] = useState(params.search);
 
   // Sync local search input if parent resets it
@@ -147,7 +166,7 @@ export default function StudentTable({
   }, [localSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSort(col) {
-    if (col === 'comments') return; // comments array not sortable server-side simply
+    if (col === 'comments' || col === 'status') return;
     if (params.sort === col) {
       if (params.order === 'asc') {
         onParamsChange({ order: 'desc' });
@@ -206,6 +225,18 @@ export default function StudentTable({
           <option value="">All Colleges</option>
           {filterOptions.colleges.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+
+        <select
+          value={params.status}
+          onChange={(e) => onParamsChange({ status: e.target.value })}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All Statuses</option>
+          <option value="New">New</option>
+          <option value="Follow Up">Follow Up</option>
+          <option value="Interested">Interested</option>
+          <option value="Closed">Closed</option>
+        </select>
       </div>
 
       {/* States */}
@@ -245,10 +276,10 @@ export default function StudentTable({
                       key={col.key}
                       onClick={() => handleSort(col.key)}
                       className={`px-3 py-3 text-left font-medium whitespace-nowrap select-none ${
-                        col.key !== 'comments' ? 'cursor-pointer hover:bg-blue-500' : ''
+                        col.key !== 'comments' && col.key !== 'status' ? 'cursor-pointer hover:bg-blue-500' : ''
                       }`}
                     >
-                      {col.label}{col.key !== 'comments' && sortIcon(col.key, params)}
+                      {col.label}{col.key !== 'comments' && col.key !== 'status' && sortIcon(col.key, params)}
                     </th>
                   ))}
                   <th className="px-3 py-3 text-left font-medium">Actions</th>
@@ -264,9 +295,11 @@ export default function StudentTable({
                         title={col.key === 'comments' ? latestComment(student.comments) : undefined}
                         className="px-3 py-3 text-gray-700 whitespace-nowrap max-w-[200px] truncate"
                       >
-                        {col.key === 'comments'
-                          ? latestComment(student.comments) || <span className="text-gray-300">—</span>
-                          : student[col.key]                || <span className="text-gray-300">—</span>}
+                        {col.key === 'status'
+                          ? <StatusBadge status={student.status} />
+                          : col.key === 'comments'
+                          ? (latestComment(student.comments) || <span className="text-gray-300">—</span>)
+                          : (student[col.key]                || <span className="text-gray-300">—</span>)}
                       </td>
                     ))}
 
@@ -284,13 +317,33 @@ export default function StudentTable({
                       </button>
 
                       {openMenu === student._id && (
-                        <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]">
+                        <div className="absolute right-0 top-10 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]">
                           <button
                             onClick={() => { setModal(student); setOpenMenu(null); }}
                             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                           >
                             View / Add Comment
                           </button>
+                          {(student.status === 'New' || student.status === 'Follow Up' || !student.status) && (
+                            <>
+                              <div className="my-1 border-t border-gray-100" />
+                              {['Interested', 'Closed'].map((s) => (
+                                <button
+                                  key={s}
+                                  disabled={statusSaving === student._id}
+                                  onClick={async () => {
+                                    setOpenMenu(null);
+                                    setStatusSaving(student._id);
+                                    try { await onStatusChange(student._id, s); } catch {}
+                                    setStatusSaving(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                >
+                                  Mark as {s}
+                                </button>
+                              ))}
+                            </>
+                          )}
                         </div>
                       )}
                     </td>
